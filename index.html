@@ -66,13 +66,13 @@
 			#maxAngle = 324
 
 			#status = this.#statuses.idle
+			#isTouching = false
 
 			#angle = this.#minAngle
 			#size = "128px"
 
 			constructor () {
 				super()
-				console.log(this.#colors, this.#statuses, this.#status)
 
 				// Make focusable by default
 				if (!this.hasAttribute('tabindex')) {
@@ -89,27 +89,74 @@
 					this.#size = parseFloat(this.getAttribute('size'), 10)
 				}
 
+				// Prevent scrolling while touching the knob
+				this.style.touchAction = 'none'
+
+
+				/**
+				 * Touch / Mouse Handlers for controlling the knob
+				 */
+
+				// Move handler that works for both mouse and touch. Needed a reference to it
+				// so it could be removed when the knob isn't being used
+				const moveHandler = e => {
+					let root = this.#isTouching ? e.touches[0] : e
+					this.setAngle(this.calcDegFromCoord(root.pageX, root.pageY))
+				}
+
+
+				// When the mouse button goes down, start listening for mouse movement and update the knob angle
 				this.addEventListener('mousedown', e => {
-					this.setAngle(this.calcDegFromCoord(e.pageX, e.pageY))
+					// Don't handle with mouse events if we are already handling with touch events
+					if (!this.#isTouching) {
+						this.setAngle(this.calcDegFromCoord(e.pageX, e.pageY))
 
-					const moveHandler = e => this.setAngle(this.calcDegFromCoord(e.pageX, e.pageY))
-
-					document.body.addEventListener('mousemove', moveHandler)
-					document.body.addEventListener('mouseup', () => {
-						document.body.removeEventListener('mousemove', moveHandler)
-					})
+						document.body.addEventListener('mousemove', moveHandler)
+					}
 				})
 
+				// When the touch is started, prevent mouse events from firing and start listening for touch
+				// movement to update the knob angle
+				this.addEventListener('touchstart', e => {
+					this.#isTouching = true // prevent mouse handlers
+					this.#status = this.#statuses.active // doesn't get focused with touch + move, so we'll mark active here
+					this.setAngle(this.calcDegFromCoord(e.touches[0].pageX, e.touches[0].pageY))
+
+					document.body.addEventListener('touchmove', moveHandler)
+				})
+
+
+				// When the mouse button is released, stop tracking the mouse movement
+				document.body.addEventListener('mouseup', () => {
+					// Don't handle with mouse events if we are already handling with touch events
+					if (!this.#isTouching) {
+						document.body.removeEventListener('mousemove', moveHandler)
+					}
+				})
+
+				// When the finger is lifted, stop tracking the touch movement
+				document.body.addEventListener('touchend', () => {
+					this.#status = this.#statuses.idle // touch + move doesn't focus and blur, so handle manually here
+					this.#isTouching = false
+					document.body.removeEventListener('touchmove', moveHandler, false)
+					this.render() // since we're updating status, we need to re-render
+				})
+
+
+				// Mark the knob as active when in focus
 				this.addEventListener('focus', () => {
 					this.#status = this.#statuses.active
 					this.render()
 				})
 
+				// Mark the knob as inactive when it loses focus
 				this.addEventListener('blur', () => {
 					this.#status = this.#statuses.idle
 					this.render()
 				})
 
+
+				// When in focus, allow the use of up/right arrows to increase value and down/left arrows to decrease value
 				this.addEventListener('keydown', e => {
 					if (e.keyCode == 38 /* up arrow */ || e.keyCode == 39 /* right arrow */)
 						this.value += .01
@@ -118,9 +165,11 @@
 						this.value -= .01
 				})
 
+				// Initial render
 				this.render()
 			}
 
+			// Render the knob via a snabby v-dom
 			render () {
 				let base = this.currentContent
 				if (!base) {
@@ -145,6 +194,7 @@
 				this.currentContent = newContent
 			}
 
+			// Calculate the angle that the mouse cursor is from the center of the knob
 			calcDegFromCoord (cursorX, cursorY) {
 				const bounds = this.getBoundingClientRect()
 				const top = bounds.top + window.pageYOffset
@@ -165,6 +215,7 @@
 				return deg
 			}
 
+			// Update the knob with the new angle and fire an event to let "outsiders" know
 			setAngle (deg) {
 				// angle can't go below 36 degrees or over 324 degrees on the knob
 				deg = Math.max(36, Math.min(324, deg))
@@ -191,6 +242,7 @@
 				return percent
 			}
 
+			// Allow a value being set to alter the angle on the knob
 			set value(newValue) {
 				if (typeof newValue !== 'number') throw new TypeError('CustomKnob value must be a number')
 
@@ -216,7 +268,7 @@
 		// listen for changes to the knob component's value
 		knob.addEventListener('input', function (ev) {
 			// this should fire when your implementation is working.
-			console.log('knob value changed! new value:', ev.detail.value);
+			// console.log('knob value changed! new value:', ev.detail.value);
 			out.innerText = Math.round(ev.detail.value * 1000) / 10 + "%"
 		});
 	</script>
